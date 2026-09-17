@@ -150,7 +150,8 @@ test('GET/PUT /env round-trips allowed keys and merges rather than overwriting',
     const second = await (await fetch(`${base}/api/gateway/env`)).json();
     // Previously written key survives a partial update.
     assert.equal(second.vars.OIDC_CLIENT_ID, 'abc');
-    assert.equal(second.vars.OIDC_CLIENT_SECRET, 'shh');
+    assert.equal(second.vars.OIDC_CLIENT_SECRET, '********');
+    assert.doesNotMatch(JSON.stringify(second), /shh/);
   });
 });
 

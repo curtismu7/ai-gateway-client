@@ -1488,9 +1488,16 @@ function readExistingEnvVars() {
   }
 }
 
+function publicEnvVars(vars) {
+  return Object.fromEntries(Object.entries(vars).map(([key, value]) => [
+    key,
+    key.endsWith('_SECRET') ? '********' : value,
+  ]));
+}
+
 router.get('/env', (_req, res) => {
   try {
-    res.json({ ok: true, vars: readExistingEnvVars() });
+    res.json({ ok: true, vars: publicEnvVars(readExistingEnvVars()) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1510,7 +1517,7 @@ router.put('/env', express.json(), (req, res) => {
     }
     fs.mkdirSync(path.dirname(GATEWAY_ENV_PATH), { recursive: true });
     fs.writeFileSync(GATEWAY_ENV_PATH, serializeDotenv(filtered), 'utf8');
-    res.json({ ok: true, vars: filtered });
+    res.json({ ok: true, vars: publicEnvVars(filtered) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
