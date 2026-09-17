@@ -138,6 +138,20 @@ input.wide, select.wide { min-width: 260px; }
 .tool-output__timing { font-size: var(--font-size-xs); margin-top: 8px; }
 .tool-output__timing--error { color: #dc2626; }
 
+.llm-info, .llm-form, .llm-results { padding: 16px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+.llm-info h2, .llm-form h2, .llm-results h2 { font-size: var(--font-size-sm); margin: 0 0 12px; }
+.llm-info p { font-size: var(--font-size-xs); color: var(--th-text-muted); line-height: 1.5; }
+.llm-form textarea { display: block; width: 100%; min-height: 150px; box-sizing: border-box; margin: 8px 0 12px; font-family: ui-monospace, monospace; resize: vertical; }
+.llm-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.llm-card { min-width: 0; text-align: left; padding: 12px; border: 1px solid var(--th-border); border-radius: 6px; background: var(--th-bg-inset); color: var(--th-text); cursor: pointer; }
+.llm-card h3 { margin: 0 0 8px; font-size: var(--font-size-sm); }
+.llm-card p { white-space: pre-wrap; word-break: break-word; font-size: var(--font-size-xs); line-height: 1.45; }
+.llm-card small { color: var(--th-text-muted); }
+.llm-card--error { border-color: #dc2626; color: #b91c1c; }
+.llm-card:not(button) { cursor: default; }
+.llm-error { color: #dc2626; font-size: var(--font-size-xs); }
+@media (max-width: 900px) { .llm-grid { grid-template-columns: 1fr; } }
+
 .relay-log__row {
   border-bottom: 1px solid var(--th-border);
   padding: 6px 0;

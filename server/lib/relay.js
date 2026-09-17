@@ -10,9 +10,9 @@
 //     restart) — that requires hosting infrastructure this standalone tool
 //     doesn't have. "Privilege" mode (straight at the gateway) and "Direct"
 //     mode (any MCP server URL you supply, no gateway in the path) remain.
-//   - The Privilege LLM-call policy comparison panel (/llm/*, /chat in the
-//     original) — a separate feature testing Privilege's LLM Gateway, not the
-//     MCP gateway this tool is about.
+//   - The LLM-call comparison panel used to be omitted; this relay now exposes a
+//     small server-side LLM comparison surface while keeping provider keys off
+//     the browser.
 const express = require('express');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -41,6 +41,28 @@ const DEFAULT_PRIVILEGE_BRAVE_MCP_URL = () => `${PRIVILEGE_GATEWAY_HOST}/${PRIVI
 // zero setup. Override to point at any MCP server you run yourself.
 const DEFAULT_DIRECT_MCP_URL = () => process.env.DIRECT_MCP_URL || 'https://ai-demo.ping-devops.com/mcp-facade/opensearch/mcp';
 const DEFAULT_DIRECT_BRAVE_MCP_URL = () => process.env.DIRECT_BRAVE_MCP_URL || 'https://ai-demo.ping-devops.com/mcp-facade/brave/mcp';
+
+const LLM_LANES = {
+  anthropic: {
+    title: 'Anthropic — through Privilege',
+    route: '/llm/anthropic/v1/messages',
+    keyEnv: 'PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC',
+    model: process.env.PRIVILEGE_LLM_MODEL_ANTHROPIC || 'claude-haiku-4-5-20251001',
+  },
+  llamacpp: {
+    title: 'llama.cpp (local)',
+    route: '/v1/chat/completions',
+    base: () => process.env.LLAMACPP_BASE_URL || 'http://host.docker.internal:8090',
+    model: process.env.LLAMACPP_MODEL || '',
+  },
+  lmstudio: {
+    title: 'LM Studio (local)',
+    route: '/v1/chat/completions',
+    base: () => process.env.LMSTUDIO_BASE_URL || 'http://127.0.0.1:1234',
+    model: process.env.LMSTUDIO_MODEL || '',
+  },
+};
+const PRIVILEGE_LLM_GATEWAY_URL = () => process.env.PRIVILEGE_LLM_GATEWAY_URL || '';
 
 function privilegeDoorUrl(appName) {
   return `${PRIVILEGE_GATEWAY_HOST}/${appName}/mcp`;
@@ -1011,6 +1033,87 @@ function discoverySummary(record) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+function llmPublicConfig() {
+  return {
+    gatewayUrl: PRIVILEGE_LLM_GATEWAY_URL(),
+    lanes: Object.entries(LLM_LANES).map(([provider, lane]) => ({
+      provider,
+      title: lane.title,
+      route: lane.route,
+      model: lane.model,
+      keyConfigured: Boolean(lane.keyEnv && process.env[lane.keyEnv]),
+      baseUrl: lane.base ? lane.base() : undefined,
+    })),
+  };
+}
+
+function localLlmUrl(provider) {
+  const base = LLM_LANES[provider].base().replace(/\/+$/, '');
+  return base.endsWith('/v1') ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
+}
+
+async function callStandaloneLlm(provider, prompt) {
+  const lane = LLM_LANES[provider];
+  const started = Date.now();
+  if (!lane) throw Object.assign(new Error(`Unknown LLM provider "${provider}"`), { status: 400 });
+  if (!prompt.trim()) throw Object.assign(new Error('Prompt is required.'), { status: 400 });
+
+  let url;
+  let headers = { 'Content-Type': 'application/json' };
+  let body;
+  if (provider === 'anthropic') {
+    const key = process.env[lane.keyEnv] || '';
+    if (!PRIVILEGE_LLM_GATEWAY_URL()) throw Object.assign(new Error('PRIVILEGE_LLM_GATEWAY_URL is not configured.'), { status: 503 });
+    if (!key) throw Object.assign(new Error(`${lane.keyEnv} is not configured.`), { status: 503 });
+    url = `${PRIVILEGE_LLM_GATEWAY_URL().replace(/\/+$/, '')}${lane.route}`;
+    headers = { ...headers, Authorization: `Bearer ${key}`, 'anthropic-version': '2023-06-01' };
+    body = { model: lane.model, max_tokens: 512, messages: [{ role: 'user', content: prompt }] };
+  } else {
+    url = localLlmUrl(provider);
+    body = { messages: [{ role: 'user', content: prompt }] };
+    if (lane.model) body.model = lane.model;
+  }
+
+  let response;
+  try {
+    response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120000) });
+  } catch (err) {
+    throw Object.assign(new Error(`${lane.title} could not be reached: ${err.message}`), { status: 502, reachedProvider: false });
+  }
+  const text = await response.text();
+  let data;
+  try { data = JSON.parse(text); } catch { data = { raw: text.slice(0, 500) }; }
+  if (!response.ok) {
+    const message = data?.error?.message || data?.error || `${response.status} ${response.statusText}`;
+    throw Object.assign(new Error(`${lane.title} failed: ${message}`), {
+      status: response.status, reachedProvider: provider !== 'anthropic' || response.status !== 403,
+      latencyMs: Date.now() - started,
+    });
+  }
+  const reply = provider === 'anthropic' ? data?.content?.[0]?.text : data?.choices?.[0]?.message?.content;
+  if (!reply) throw Object.assign(new Error(`${lane.title} returned an empty response.`), { status: 502, reachedProvider: true });
+  return { reply, provider, route: lane.route, model: lane.model || null, latencyMs: Date.now() - started, reachedProvider: true };
+}
+
+router.get('/llm/config', (_req, res) => res.json(llmPublicConfig()));
+
+router.post('/llm/call', express.json({ limit: '256kb' }), async (req, res) => {
+  const provider = String(req.body?.provider || '');
+  const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt.trim() : '';
+  try {
+    res.json(await callStandaloneLlm(provider, prompt));
+  } catch (err) {
+    res.status(err.status || 502).json({
+      error: err.message,
+      provider,
+      route: LLM_LANES[provider]?.route || '',
+      reachedProvider: err.reachedProvider === true,
+      latencyMs: err.latencyMs,
+      code: err.status === 403 ? 'llm_policy_denied' : undefined,
+    });
+  }
+});
 
 router.get('/state', (req, res) => {
   const sess = getSession(req);

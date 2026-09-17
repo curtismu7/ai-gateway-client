@@ -30,11 +30,14 @@ Then open http://127.0.0.1:3910. It defaults to the **Privilege** door on the pu
 - **Raw MCP requests** — anything that isn't `tools/call`: resources, prompts, completion, tasks.
 - **Doors probe** — "denied here — does this identity work anywhere else?" Tries the same token against every other configured door in one click, since a policy denial often comes back as a bare 403 with no detail.
 - **Relay log** — every request/response this tool sends and receives, live over SSE, so you can see exactly what went over the wire.
+- **LLM Gateway comparison** — choose a known attack or enter a prompt manually, then compare the protected Privilege Anthropic lane with direct llama.cpp and LM Studio local lanes. The protected lane can block before the provider sees the prompt; local lanes have no policy layer.
 - **Privilege console door discovery** (optional) — paste your Privilege console session's `auth_token` cookie to pull in every Agentic App and policy registered on your environment as selectable doors, no code change or redeploy needed.
 
 ## Config
 
 Copy `server/.env.example` to `server/.env`. Nothing is required to try either door against the public demo — set `PRIVILEGE_GATEWAY_HOST` (and friends) to point Privilege mode at your own Privilege AI Gateway, or `DIRECT_MCP_URL` to point Direct mode at any other MCP server you run.
+
+The optional LLM Gateway tab requires `PRIVILEGE_LLM_GATEWAY_URL` and `PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC` for the protected lane. Set `LLAMACPP_BASE_URL` and/or `LMSTUDIO_BASE_URL` for direct local comparisons. These values are read by the server only; the browser receives configuration status, never keys.
 
 ## Development
 
@@ -52,6 +55,6 @@ docker build -t ai-gateway-client .
 docker run -p 3910:3910 -v ai-gateway-client-data:/root/.ai-gateway-client ai-gateway-client
 ```
 
-## Not included
+## Scope note
 
-Adapted from a larger internal tool that also compared LLM-call policy enforcement (chat completions through a separate "Privilege LLM Gateway" lane vs. direct-to-provider) and a third "Façade" door mode that proxied through this same tool's own durable OAuth broker so a standalone MCP client's registration survived a gateway restart. Both depend on hosting infrastructure this standalone tool doesn't have, so they were left out — this build is scoped to the MCP tool-calling gateway itself.
+The standalone client still focuses on MCP tool calling. Its optional LLM comparison is intentionally server-side and limited to the protected Anthropic lane plus direct local Llama.cpp/LM Studio lanes; it does not reuse the larger demo's BFF session or findings service.

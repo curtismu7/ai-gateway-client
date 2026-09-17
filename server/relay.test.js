@@ -236,3 +236,43 @@ test('console/connect carries the 2026-09 spec fields: tools, discovery, auth mo
     await new Promise((resolve) => mockConsole.close(resolve));
   }
 });
+
+test('LLM config reports lanes without exposing the Privilege key', async () => {
+  const previous = process.env.PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC;
+  process.env.PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC = 'secret-test-key';
+  try {
+    await withServer(async (base) => {
+      const response = await fetch(`${base}/api/gateway/llm/config`);
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.lanes.map((lane) => lane.provider), ['anthropic', 'llamacpp', 'lmstudio']);
+      assert.equal(body.lanes.find((lane) => lane.provider === 'anthropic').keyConfigured, true);
+      assert.doesNotMatch(JSON.stringify(body), /secret-test-key/);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC;
+    else process.env.PRIVILEGE_LLM_VIRTUAL_KEY_ANTHROPIC = previous;
+  }
+});
+
+test('LLM call relays a local OpenAI-compatible response', async () => {
+  const originalFetch = global.fetch;
+  try {
+    await withServer(async (base) => {
+      global.fetch = async (url, options) => String(url).startsWith(base)
+        ? originalFetch(url, options)
+        : ({ ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: '2' } }] }) });
+      const response = await fetch(`${base}/api/gateway/llm/call`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'lmstudio', prompt: '1+1' }),
+      });
+      const body = await response.json();
+      assert.equal(response.status, 200);
+      assert.equal(body.reply, '2');
+      assert.equal(body.provider, 'lmstudio');
+    });
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

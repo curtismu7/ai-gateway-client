@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import InspectorShell from './components/shared/InspectorShell';
 import InspectorTabs from './components/shared/InspectorTabs';
 import InspectorListItem from './components/shared/InspectorListItem';
+import LlmGatewayPanel from './components/LlmGatewayPanel';
 import { api } from './lib/api';
 
 const OUTPUT_TABS = [
@@ -47,6 +48,7 @@ export default function App() {
   const [lastInvoke, setLastInvoke] = useState(null);
   const [lastTiming, setLastTiming] = useState(null);
   const [outputTab, setOutputTab] = useState('response');
+  const [activeSurface, setActiveSurface] = useState('mcp');
 
   const [rawMethod, setRawMethod] = useState('resources/list');
   const [rawParams, setRawParams] = useState('{}');
@@ -182,6 +184,8 @@ export default function App() {
 
   if (!state) return <div style={{ padding: 20 }}>Loading…</div>;
 
+  if (activeSurface === 'llm') return <LlmGatewayPanel onBack={() => setActiveSurface('mcp')} />;
+
   const doorLabel = state.gatewayMode === 'privilege' ? 'Privilege — straight at the AI Gateway' : 'Direct — no Privilege in the path';
 
   const left = (
@@ -295,6 +299,7 @@ export default function App() {
             <button type="button" className="btn" onClick={loadTools} disabled={!state.oauth.authenticated}>Refresh tools</button>
             <button type="button" className="btn" onClick={runProbe} disabled={!state.oauth.authenticated}>Probe other doors</button>
             <button type="button" className="btn" onClick={() => setShowConsoleForm((v) => !v)}>Connect Privilege console</button>
+            <button type="button" className="btn btn--primary" onClick={() => setActiveSurface('llm')}>LLM Gateway</button>
           </div>
           {showConsoleForm && (
             <div className="add-server-form">
